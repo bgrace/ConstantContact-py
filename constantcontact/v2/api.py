@@ -54,9 +54,10 @@ class ConstantContact:
                            json=data,
                            params=query_params)
 
-    def put(self, api_path, data):
+    def put(self, api_path, data, query_params=None):
         return self.s.put(self.api_endpoint(api_path),
-                          json=data)
+                          json=data,
+                          params=query_params)
 
     def delete(self, api_path):
         return self.s.delete(self.api_endpoint(api_path))
@@ -89,22 +90,24 @@ class ConstantContact:
         else:
             return api_failure(response)
 
+    @classmethod
+    def action_by_query_param(cls, created_by_visitor=True):
+        if created_by_visitor:
+            return {'action_by': 'ACTION_BY_VISITOR'}
+        else:
+            return {'action_by': 'ACTION_BY_OWNER'}
+
     def create_contact(self, email, contact_list_ids, created_by_visitor=True, data=None, **kwargs):
 
         if data is None:
             data = {}
-
-        if created_by_visitor:
-            action_by = 'ACTION_BY_VISITOR'
-        else:
-            action_by = 'ACTION_BY_OWNER'
 
         user_data = dict(email_addresses=[{'email_address': email}],
                     lists=[{'id': i} for i in contact_list_ids])
         user_data.update(data)
         user_data.update(**kwargs)
 
-        response = self.post('contacts', user_data, {'action_by': action_by})
+        response = self.post('contacts', user_data, self.action_by_query_param(created_by_visitor))
 
         if 201 == response.status_code:
             return api_creation(Contact(api=self, raw=response.json()), response)
@@ -150,13 +153,13 @@ class Contact:
 
     @property
     def lists(self):
-        return [ContactList(self.api, list_id=l['id'], status=l['status']) for l in self.raw['lists']]
+        return [ContactList(self.api, list_id=l['id']) for l in self.raw['lists']]
 
     @property
     def email(self):
         return self.raw['email_addresses'][0]['email_address']
 
-    def add_to_list(self, contact_list):
+    def subscribe(self, contact_list, visitor_opt_in=True):
 
         if isinstance(contact_list, ContactList):
             clid = contact_list.list_id
@@ -169,7 +172,32 @@ class Contact:
         new_state = self.raw.copy()
         new_state['lists'].append({'id': clid})
 
-        response = self.api.put()
+        response = self.api.put([self.api_path, self.contact_id], new_state, self.api.action_by_query_param(visitor_opt_in))
+        if 200 == response.status_code:
+            return api_creation(Contact(self.api, new_state), response)
+        else:
+            return api_failure(response)
+
+    def unsubscribe(self, contact_list):
+
+        if isinstance(contact_list, ContactList):
+            clid = contact_list.list_id
+        else:
+            clid = str(contact_list)
+
+        if not self.is_member(contact_list):
+            return api_fetched(self, None)
+
+        new_state = self.raw.copy()
+
+        new_state['lists'] = list(filter(lambda l: l['id'] != clid, new_state['lists']))
+
+        response = self.api.put([self.api_path, self.contact_id], new_state)
+        if 200 == response.status_code:
+            return api_creation(Contact(self.api, new_state), response)
+        else:
+            return api_failure(response)
+
 
     def is_member(self, contact_list):
         if isinstance(contact_list, ContactList):

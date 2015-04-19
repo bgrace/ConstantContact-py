@@ -19,7 +19,7 @@ def get_api_from_environment_vars():
     token = os.environ['CONSTANTCONTACT_TEST_API_TOKEN']
     return ConstantContact(key, token)
 
-test_email_address = "test@example.com"
+test_email_address = "test1@example.com"
 test_contact_list_one_name = "Test Contact List 1"
 test_contact_list_two_name = "Test Contact List 2"
 
@@ -104,13 +104,13 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertEqual(instance.lists[0].list_id, self.test_list_one_id)
 
         # Look to contact back up in the system and make sure it's the same
-        time.sleep(2)
+        #time.sleep(2)
         confirmation_result = self.api.get_contact_by_email(email)
         self.assertTrue(confirmation_result.success)
         self.assertEqual(instance.contact_id, confirmation_result.instance.contact_id)
 
         # Make sure we can't create another contact with the same email
-        time.sleep(2)
+        #time.sleep(2)
         retry_result = self.api.create_contact(email, [self.test_list_one_id], created_by_visitor=False,
                                                first_name=first_name + '2', last_name=last_name + '2')
         self.assertFalse(retry_result.success)
@@ -119,7 +119,7 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertEqual(retry_result.response.status_code, 409)
 
         # Delete the contact and confirm response is as expected
-        time.sleep(2)
+        #time.sleep(2)
         deleted_result = instance.delete()
 
         self.assertTrue(deleted_result.success)
@@ -127,7 +127,7 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertIsNone(deleted_result.instance)
 
         # Make sure the contact is no longer returned
-        time.sleep(2)
+        #time.sleep(2)
         lookup_result = self.api.get_contact_by_email(email)
 
         self.assertTrue(lookup_result.success)
@@ -140,14 +140,37 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertTrue(result.success)
 
         contact = result.instance
+        self.assertEqual(contact.raw['first_name'], "Test")
+        self.assertEqual(contact.raw['last_name'], "One")
         self.assertFalse(contact.is_member('0123'))
 
         self.assertTrue(contact.is_member(self.test_list_one_id))
         self.assertFalse(contact.is_member(self.test_list_two_id))
 
-        #contact.add_to_list(self.test_list_two_id)
+        result = contact.subscribe(self.test_list_two_id)
+        self.assertEqual(result.response.status_code, 200)
+        self.assertTrue(result.success)
 
+        contact = result.instance
+        self.assertEqual(contact.raw['first_name'], "Test")
+        self.assertEqual(contact.raw['last_name'], "One")
+        self.assertFalse(contact.is_member('0123'))
+        self.assertTrue(contact.is_member(self.test_list_one_id))
+        self.assertTrue(contact.is_member(self.test_list_two_id))
 
+        result = contact.unsubscribe(self.test_list_two_id)
+        self.assertEqual(result.response.status_code, 200)
+        self.assertTrue(result.success)
+        contact = result.instance
+        self.assertEqual(contact.raw['first_name'], "Test")
+        self.assertEqual(contact.raw['last_name'], "One")
+        self.assertFalse(contact.is_member('0123'))
+        self.assertTrue(contact.is_member(self.test_list_one_id))
+        self.assertFalse(contact.is_member(self.test_list_two_id))
+
+        result = contact.unsubscribe('0123')
+        self.assertTrue(result.success)
+        self.assertIsNone(result.response)
 
 
     # TODO need to write a test that adds a list to a user's subscriptions. Find out if missing JSON keys in the
