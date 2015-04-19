@@ -66,7 +66,7 @@ class ConstantContact:
         response = self.get("lists")
 
         if 200 == response.status_code:
-            instance = [ContactList.from_dict(self, cl) for cl in response.json()]
+            instance = [ContactList(self, raw) for raw in response.json()]
             return api_fetched(instance, response)
         else:
             return api_failure(response)
@@ -75,7 +75,7 @@ class ConstantContact:
         response = self.get('lists/'+str(list_id))
 
         if 200 == response.status_code:
-            return ContactList.from_dict(self, d=response.json())
+            return ContactList(self, response.json())
         else:
             return None
 
@@ -84,7 +84,7 @@ class ConstantContact:
         response = self.post('lists', data)
 
         if 201 == response.status_code:
-            return api_creation(ContactList.from_dict(self, d=response.json()), response)
+            return api_creation(ContactList(self, response.json()), response)
         elif 409 == response.status_code:
             return api_acknowledged(response)
         else:
@@ -130,8 +130,30 @@ class ConstantContact:
         else:
             return api_failure(response)
 
+    @classmethod
+    def resource_ids(cls, ids):
+        # We want to consume either single values or lists of values, so ids may be "foo" or ["foo", ContactList(id="bar")]
 
-class Contact:
+        def get_rid(obj):
+            try:
+                return obj.resource_id
+            except AttributeError:
+                return str(obj)
+
+        if isinstance(ids, list):  # string is iterable, and CC ids are strings so I'm not sure what they best test is
+            return list(map(get_rid, ids))
+        else:
+            return [get_rid(ids)]
+
+
+class ConstantContactResource:
+
+    @property
+    def resource_id(self):
+        raise NotImplemented
+
+
+class Contact(ConstantContactResource):
 
     api_path = 'contacts'
 
@@ -144,6 +166,10 @@ class Contact:
         return self.raw['id']
 
     @property
+    def resource_id(self):
+        return self.contact_id
+
+    @property
     def first_name(self):
         return self.raw['first_name']
 
@@ -153,7 +179,7 @@ class Contact:
 
     @property
     def lists(self):
-        return [ContactList(self.api, list_id=l['id']) for l in self.raw['lists']]
+        return [ContactList(self.api, l) for l in self.raw['lists']]
 
     @property
     def email(self):
@@ -161,16 +187,15 @@ class Contact:
 
     def subscribe(self, contact_list, visitor_opt_in=True):
 
-        if isinstance(contact_list, ContactList):
-            clid = contact_list.list_id
-        else:
-            clid = str(contact_list)
+        desired_subscriptions = set(self.api.resource_ids(contact_list))
+        current_subscriptions = set(self.api.resource_ids(self.lists))
 
-        if self.is_member(contact_list):
+        if not desired_subscriptions - current_subscriptions:
             return api_fetched(self, None)
 
         new_state = self.raw.copy()
-        new_state['lists'].append({'id': clid})
+        new_subscriptions = list(current_subscriptions | desired_subscriptions)
+        new_state['lists'] = [{'id': clid} for clid in new_subscriptions]
 
         response = self.api.put([self.api_path, self.contact_id], new_state, self.api.action_by_query_param(visitor_opt_in))
         if 200 == response.status_code:
@@ -180,17 +205,15 @@ class Contact:
 
     def unsubscribe(self, contact_list):
 
-        if isinstance(contact_list, ContactList):
-            clid = contact_list.list_id
-        else:
-            clid = str(contact_list)
+        desired_removals = set(self.api.resource_ids(contact_list))
+        current_subscriptions = set(self.api.resource_ids(self.lists))
 
-        if not self.is_member(contact_list):
+        if not desired_removals & current_subscriptions:
             return api_fetched(self, None)
 
         new_state = self.raw.copy()
-
-        new_state['lists'] = list(filter(lambda l: l['id'] != clid, new_state['lists']))
+        new_subscriptions = list(current_subscriptions - desired_removals)
+        new_state['lists'] = [{'id': clid} for clid in new_subscriptions]
 
         response = self.api.put([self.api_path, self.contact_id], new_state)
         if 200 == response.status_code:
@@ -198,18 +221,8 @@ class Contact:
         else:
             return api_failure(response)
 
-
-    def is_member(self, contact_list):
-        if isinstance(contact_list, ContactList):
-            clid = contact_list.list_id
-        else:
-            clid = str(contact_list)
-
-        for contact_list in self.lists:
-            if clid == contact_list.list_id:
-                return True
-
-        return False
+    def is_member(self, contact_list_id):
+        return contact_list_id in self.api.resource_ids(self.lists)
 
     def delete(self):
 
@@ -221,34 +234,46 @@ class Contact:
         return result
 
 
-class ContactList:
+class ContactList(ConstantContactResource):
 
     class Status:
-
-        def __init__(self, status_str):
-            pass
 
         HIDDEN = "HIDDEN"
         ACTIVE = "ACTIVE"
         REMOVED = "REMOVED"
 
-    def __init__(self, api, list_id=None, name=None, status=None, created_date=None, modified_date=None, contact_count=None, raw=None):
+    def __init__(self, api, raw=None):
         self.api = api
-        self.list_id = list_id
-        self.name = name
-        self.status = status
-        self.created_date = created_date
-        self.modified_date = modified_date
-        self.contact_count = contact_count
         self.raw = raw
 
-    @classmethod
-    def from_dict(cls, api, d):
-        return cls(api, d['id'], d['name'], d['status'], d['created_date'], d['modified_date'], d['contact_count'], d)
+    @property
+    def resource_id(self):
+        return self.list_id
 
-    def members(self):
-        pass
+    @property
+    def list_id(self):
+        return self.raw['id']
 
-    def add(self, contact):
-        pass
+    @property
+    def name(self):
+        return self.raw['name']
+
+    @property
+    def status(self):
+        return self.raw['status']
+
+    @property
+    def created_date(self):
+        return self.raw['created_date']
+
+    @property
+    def modified_date(self):
+        return self.raw['modified_date']
+
+    @property
+    def contact_count(self):
+        return self.raw['contact_count']
+
+
+
 

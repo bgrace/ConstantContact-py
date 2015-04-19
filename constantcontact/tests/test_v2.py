@@ -22,6 +22,7 @@ def get_api_from_environment_vars():
 test_email_address = "test1@example.com"
 test_contact_list_one_name = "Test Contact List 1"
 test_contact_list_two_name = "Test Contact List 2"
+test_contact_list_three_name = "Test Contact List 3"
 
 def random_email():
     return str(uuid.uuid4())+"@example.com"
@@ -33,21 +34,29 @@ class ConstantContactTestCase(unittest.TestCase):
         api = get_api_from_environment_vars()
         result = api.create_list(test_contact_list_one_name, ContactList.Status.HIDDEN)
         result = api.create_list(test_contact_list_two_name, ContactList.Status.HIDDEN)
+        result = api.create_list(test_contact_list_three_name, ContactList.Status.HIDDEN)
         result = api.lists()  # the only way to get the id of a list that already exists is by fetching all and searching by name
 
         cls.test_list_one_id = ''
         cls.test_list_two_id = ''
+        cls.test_list_three_id = ''
         for contact_list in result.instance:
+            # TODO this is getting out of hand
             if contact_list.name == test_contact_list_one_name:
                 cls.test_list_one_id = contact_list.list_id
             if contact_list.name == test_contact_list_two_name:
                 cls.test_list_two_id = contact_list.list_id
+            if contact_list.name == test_contact_list_three_name:
+                cls.test_list_three_id = contact_list.list_id
 
         if not cls.test_list_one_id:
             raise Exception("Failed to find the test list one, things are looking bad.")
 
         if not cls.test_list_two_id:
             raise Exception("Failed to find the test list two, things are looking bad.")
+
+        if not cls.test_list_three_id:
+            raise Exception("Failed to find the test list three, things are looking bad.")
 
         result = api.create_contact(test_email_address,
                                     [cls.test_list_one_id],
@@ -135,15 +144,15 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertEqual(lookup_result.instance.raw['status'], "OPTOUT")
 
 
-    def test_add_list(self):
+    def test_subscribe_single_list(self):
         result = self.api.get_contact_by_email(test_email_address)
         self.assertTrue(result.success)
 
         contact = result.instance
+        contact_id = contact.contact_id
         self.assertEqual(contact.raw['first_name'], "Test")
         self.assertEqual(contact.raw['last_name'], "One")
         self.assertFalse(contact.is_member('0123'))
-
         self.assertTrue(contact.is_member(self.test_list_one_id))
         self.assertFalse(contact.is_member(self.test_list_two_id))
 
@@ -152,6 +161,8 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertTrue(result.success)
 
         contact = result.instance
+        # TODO fetch the contact by id and run tests on that instance, perhaps compare that with result.instance
+
         self.assertEqual(contact.raw['first_name'], "Test")
         self.assertEqual(contact.raw['last_name'], "One")
         self.assertFalse(contact.is_member('0123'))
@@ -173,8 +184,35 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertIsNone(result.response)
 
 
-    # TODO need to write a test that adds a list to a user's subscriptions. Find out if missing JSON keys in the
-    # request result in that key being set to empty/null.
+    def test_subscribe_multiple_list(self):
+        result = self.api.get_contact_by_email(test_email_address)
+        self.assertTrue(result.success)
+        contact = result.instance
+
+        self.assertTrue(contact.is_member(self.test_list_one_id))
+        self.assertFalse(contact.is_member(self.test_list_two_id))
+        self.assertFalse(contact.is_member(self.test_list_three_id))
+        result = contact.subscribe([self.test_list_two_id, self.test_list_three_id])
+        self.assertEqual(result.response.status_code, 200)
+        self.assertTrue(result.success)
+        contact = result.instance
+
+        self.assertTrue(contact.is_member(self.test_list_one_id))
+        self.assertTrue(contact.is_member(self.test_list_two_id))
+        self.assertTrue(contact.is_member(self.test_list_three_id))
+
+        result = contact.unsubscribe([self.test_list_two_id, self.test_list_three_id])
+        self.assertEqual(result.response.status_code, 200)
+        self.assertTrue(result.success)
+        contact = result.instance
+        self.assertTrue(contact.is_member(self.test_list_one_id))
+        self.assertFalse(contact.is_member(self.test_list_two_id))
+        self.assertFalse(contact.is_member(self.test_list_three_id))
+
+
+
+
+
 
 
 
