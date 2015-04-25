@@ -209,6 +209,8 @@ class ConstantContactTestCase(unittest.TestCase):
         self.assertFalse(contact.is_member(self.test_list_two_id))
         self.assertFalse(contact.is_member(self.test_list_three_id))
 
+    # TODO test here that ConstantContactResource can be converted to a list of ids
+
 
 
 

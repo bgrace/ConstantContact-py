@@ -26,7 +26,7 @@ def api_deleted(response):
 
 class ConstantContact:
 
-    def __init__(self, key, token, api_root="https://api.constantcontact.com/v2/"):
+    def __init__(self, key, token, api_root="https://api.constantcontact.com/v2/", timeout=5.0):
         self.key = key
         self.token = token
         self.query_params = {'api_key': self.key}
@@ -34,6 +34,7 @@ class ConstantContact:
         self.s = requests.Session()
         self.s.headers.update(self.headers)
         self.s.params.update(self.query_params)
+        self.timeout = timeout
         self.api_root = api_root
 
     def api_endpoint(self, api_path):
@@ -46,21 +47,25 @@ class ConstantContact:
     def get(self, api_path, query_params=None):
 
         return self.s.get(self.api_endpoint(api_path),
-                          params=query_params)
+                          params=query_params,
+                          timeout=self.timeout)
 
     def post(self, api_path, data, query_params=None):
 
         return self.s.post(self.api_endpoint(api_path),
                            json=data,
-                           params=query_params)
+                           params=query_params,
+                           timeout=self.timeout)
 
     def put(self, api_path, data, query_params=None):
         return self.s.put(self.api_endpoint(api_path),
                           json=data,
-                          params=query_params)
+                          params=query_params,
+                          timeout=self.timeout)
 
     def delete(self, api_path):
-        return self.s.delete(self.api_endpoint(api_path))
+        return self.s.delete(self.api_endpoint(api_path),
+                             timeout=self.timeout)
 
     def lists(self):
         response = self.get("lists")
